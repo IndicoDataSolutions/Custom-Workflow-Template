@@ -1,0 +1,20 @@
+- type: serial
+  encrypted_dockercfg_path: dockercfg.encrypted
+  steps:
+    - name: Testing
+      service: custom_app-tests
+      command: /custom_app/scripts/testing.sh
+    - type: parallel
+      service: custom_app
+      steps:
+        - name: Build
+          type: push
+          image_name: gcr.io/new-indico/custom_app
+          registry: "https://gcr.io"
+          dockercfg_service: gcr-dockercfg
+          image_tag: "{{.Branch}}.{{.CommitID}}"
+          command: "echo 'Pushing'"
+    - name: Push
+      service: deploy
+      command: "deploy_image.sh custom_app custom_app"
+

@@ -1,0 +1,57 @@
+custom_app:
+  build:
+    dockerfile: Dockerfile
+    encrypted_args_file: build_args.encrypted
+  volumes:
+    - .:/custom_app
+  depends_on:
+    - rabbitmq
+    - celery-redis
+  encrypted_env_file: codeship.env
+  dockercfg_service: gcr-dockercfg
+  cached: true
+  default_cache_branch: "development"
+
+custom_app-tests:
+  build:
+    dockerfile: Dockerfile
+    encrypted_args_file: build_args.encrypted
+    args:
+      EXTRAS: "[test]"
+  environment:
+  volumes:
+    - .:/custom_app
+  depends_on:
+    - rabbitmq
+    - celery-redis
+  encrypted_env_file: codeship.env
+  dockercfg_service: gcr-dockercfg
+  cached: true
+  default_cache_branch: "development"
+
+deploy:
+  image: gcr.io/new-indico/indico-deployment
+  dockercfg_service: gcr-dockercfg
+  encrypted_env_file: codeship.env
+  default_cache_branch: "development"
+  cached: true
+
+rabbitmq:
+  image: rabbitmq:latest
+  cached: true
+  default_cache_branch: "development"
+  environment:
+    RABBITMQ_DEFAULT_USER: indico
+    RABBITMQ_ERLANG_COOKIE: rabbitmq_erlang_cookie
+    RABBITMQ_DEFAULT_PASS: rabbitmq_password
+
+gcr-dockercfg:
+  image: indicoio/gcr-dockercfg
+  add_docker: true
+  encrypted_env_file: codeship.env
+
+celery-redis:
+  image: redis:latest
+  cached: true
+  default_cache_branch: "development"
+
