@@ -1,3 +1,4 @@
+from uuid import uuid4
 
 from custom_app.celery_tasks import JS
 from jetstream.contexts import Ctx, CKey
@@ -42,7 +43,8 @@ def start_extraction_pipeline(
         "model_id": 12345,  # not used, but probably should be accurate
         "model": {
             "id": 12345,  # not used, but probably should be accurate
-            "model_file_path": "",  # , # Needs to be grabbed from the cluster and updated everytime the model changes.
+            #IMPORTANT model_file_path to be grabbed from the cluster and updated everytime the model changes.
+            "model_file_path": "", 
             "task_type": TaskType.ANNOTATION,
             "model_type": ModelType.FINETUNE,
             "model_options": {},
@@ -79,5 +81,10 @@ def post_processing(
     tokens = task.storage.read_store_object(ctx_values["ocr_storage"])
     input_filename = ctx_values["filename"]
     # task.storage.store if larger than 100mb, not relevant here
-    your_output_to_client = None
-    return your_output_to_client
+    result_prefix = uuid4()
+    return task.storage.store(
+        dict, # this should be your result object 
+        meta=True, 
+        filename=f"{result_prefix}.json", 
+        serializer="json",
+    )
