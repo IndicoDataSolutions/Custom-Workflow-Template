@@ -27,7 +27,8 @@ and then re-encrypt them using the AES key you downloaded in the previous step. 
 
 5. Incorporate your custom code into workflow.py.
 
-6. Test that the workflow works locally using either `jet steps` or `jet run`
+6. Test that the workflow works locally using either `jet steps` or `jet run YOUR-PROJECT-tests`
+   (note: if you run `jet run` run `jet cleanup` afterwards)
 
 ## Deploying your Custom Workflow:
 
@@ -37,9 +38,9 @@ Step 2: get image hash from google container registry ( hash is under "tags" in 
 
 Step 3: go to cluster manager of the VPC you want to deploy to (can find details under asana indico installations board, access via `ssh cluster_name` after you've registered pem/IP to .ssh/config)
 
-Step 4: run indico updraft edit -I
+Step 4: run `indico updraft edit -I`
 
-Step 5: add image
+Step 5: add image (image-name and image-hash are both derived from GCP)
  images:
    {name-of-image}: {image-name}:{image-hash}
 
@@ -48,6 +49,11 @@ services:
   {service-name}:
     <!template>: appstack
     app: {python_lib_name}
+    # env is optional
+    env: 
+    - name: QUEUE_NAME
+      value: '1231231'
+    # name-of-image is whatever you called name-of-image in step 5
     image: {name-of-image}
     queue: {queue-name}
     type: celery
@@ -77,8 +83,10 @@ Step 15: write your workflow ID down!
 
 To update to a new image (after committing to your github main branch), run this command from the cluster 
 manager:
-`indico push image image_name image_name:IMAGE_HASH`
+`indico push image_name service_name image_name:IMAGE_HASH`
 The workflow will be updated immediately and no other changes will be needed.
+
+Or edit indico updraft and manually replace the hash, render all but don't apply. indico apply service_name
 
 Things not working?
 
