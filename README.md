@@ -23,7 +23,8 @@ and then re-encrypt them using the AES key you downloaded in the previous step. 
 
 4. Find the filepath to your model ID (this will have to change every time the model is updated).
    `kube exec moonbow` then run the script 'get_model_paths.py', you'll see it in the scripts folder.
-   Add this in your workflow.py pred_kwargs for model_file_path.
+   Add this in your workflow.py pred_kwargs for model_file_path. (if this script is not there, you can 
+   create it there- get_model_paths.py is in the scripts folder of this repo)
 
 5. Incorporate your custom code into workflow.py.
 
@@ -45,6 +46,7 @@ Step 5: add image (image-name and image-hash are both derived from GCP)
    {name-of-image}: {image-name}:{image-hash}
 
 Step 6: add new service:
+```
 services:
   {service-name}:
     <!template>: appstack
@@ -60,12 +62,14 @@ services:
     values:
       resources:
         memory: 4Gi
-
+```
 Step 7: Save + render with changes, but * do NOT apply when prompted
 
-Step 8: indico render  {service-name}
+Step 8: `indico render  {service-name}`
 
 Step 9: open the generated file in the generated/ folder and check the image name
+
+Step 9.1: `indico apply {service-name}`
 
 Step 10: wait until the container is listed as ready (watch -n 2 kp {service-name})
 
@@ -91,7 +95,7 @@ Or edit indico updraft and manually replace the hash, render all but don't apply
 Things not working?
 
 * From the cluster: `klogs start_of_your_worker_or_service_name` 
-
+* From the cluster: `kubectl describe pod name-of-service`
 
 Nice to haves: 
 
