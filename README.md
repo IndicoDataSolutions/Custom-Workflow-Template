@@ -109,7 +109,7 @@ have one custom service, if you have two (that use same image), you'll need to f
 Things not working?
 
 * From the cluster: `klogs start_of_your_worker_or_service_name`
-* From the cluster: `klogs service_name\|customv2\|customv1\|etc.` for all services used and then run a 
+* From the cluster: `klogs service_name\|customv2\|customv1\|doctor-workflow\|etc.` for all services used and then run a 
                      doc through workflow. 
 * From the cluster: `kubectl describe pod name-of-service`
 * You can `kube exec service-name` and then make changes to your code that will apply instantly to you 
