@@ -1,6 +1,7 @@
 """
-Kube exec moonbow
-then run this script passing a range of model IDs, i.e. python3 get_model_paths.py 512 512 
+Get model file paths for a given range of model IDs, example:
+
+python3 get_model_paths.py 512 513
 """
 import json
 import sys
@@ -12,6 +13,4 @@ if __name__ == "__main__":
     for mgid in range(int(sys.argv[1]), int(sys.argv[2]) + 1):
         path = session.query(Model).filter(Model.id == mgid).first().model_file_path
         mapping[mgid] = path
-    with open("model_file_paths.json", "w") as fd:
-        json.dump(mapping, fd)
     print(mapping)
