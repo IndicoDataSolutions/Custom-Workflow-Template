@@ -3,10 +3,15 @@ from uuid import uuid4
 from custom_app.celery_tasks import JS
 from jetstream.contexts import Ctx, CKey
 from jetstream.tasks import Task, Chain
-from indicore.enums import TaskType, ModelType
+from indicore.enums import TaskType, ModelType, FeatureDomainEnum
+from jetstream.plugins.storage.storage_object import StorageObject
+
 
 
 def load_context_values(task, ctx_mappings):
+    """
+    Retrieve your submissions filename, full text, and ocr storage object
+    """
     ocr_storage_obj = None
     filename = None
     text = None
@@ -28,63 +33,150 @@ def load_context_values(task, ctx_mappings):
     }
 
 
-# Below assume you are intercepting the OCR and just passing it to an extraction model
-# queue is the name of your worker, it is append to your app name
-# trail_ctx is the context arguments that follow the process as it moves between tasks on the custom chain
+# BEGINNING OF CUSTOM WORKFLOW: start extraction pipeline is the beginning of your custom workflow.
+# You are intercepting post-OCR and beginning your sequence of models and logic.
 @JS.task(
-    "start_extraction_pipeline", queue="workflow", trail_ctx=True
+    "start_extraction_pipeline",
+    # queue is a name you create for your worker, it should be identical across your tasks
+    queue="my_workflow_name",
+    # trail_ctx are the context arguments that follow the process as it moves between tasks
+    trail_ctx=True,
 )
 def start_extraction_pipeline(
     task, ctx_mappings: CKey("workflow", "ctx_mappings") = None
 ):
     ctx_values = load_context_values(task, ctx_mappings=ctx_mappings)
     ocr_text = ctx_values["text"]
-    predict_kwargs = {
-        "model_id": 12345,  # not used, but probably should be accurate
+    # other values you have here, not used in this example yet
+    print(ctx_values["filename"])
+    # you need to load the ocr object
+    print(task.storage.read_store_object(ctx_values["ocr_storage"]))
+
+    # this example is starting off with a classification model, the kwargs are model type specific
+    kwargs = {
+        # model_id isn't actually used but should be accurate for record keeping
+        "model_id": 631,
         "model": {
-            "id": 12345,  # not used, but probably should be accurate
-            #IMPORTANT model_file_path to be grabbed from the cluster and updated everytime the model changes.
-            "model_file_path": "", 
+            "id": 631,
+            # you will get your actual model_file_path from the cluster,
+            # this will need to be updated everytime the model changes.
+            "model_file_path": "/finetune_models/e52e5884-d46b-11eb-8382-7ecdc26c016d",
+            # these are standard for classification models
+            "task_type": TaskType.CLASSIFICATION,
+            "model_type": ModelType.STANDARD,
+            "model_options": {},
+            "status": "complete",
+            "user_id": 1,
+        },
+        "model_options": {
+            "domain": FeatureDomainEnum.STANDARD_V2,
+        },
+        "model_group": {
+            # these don't matter can be anything
+            "subset_id": 1,
+            "dataset_id": 1,
+        },
+        "sequence": False,
+        "save_to_db": False,
+        "load_existing_data": False,
+        "vectors_key": str(uuid4())
+    }
+    # NOTE: if you wanted to run some tasks in parallel, wrap Task(), Task() in Group() -> List[List]
+    return Chain(
+        # this cyclone featurize task is boiler plate for running classification
+        Task("cyclone", "featurize", "start", kwargs={**kwargs, "data": [ocr_text]}),
+        # this is boilerplate for a classification task
+        Task(
+            "customv1",
+            "predict_classification",
+            "predict",
+            kwargs=kwargs,
+        ),
+        # for classification, we want to then pass to this "router" to pass to different models based on result
+        Task(
+            # below should match you app name in the __init__.py of this module
+            # order is app, queue, path (reverse of JS.Task)
+            "funding_memos",
+            "my_workflow_name",
+            "doc_type_router",
+            kwargs={"ocr_text": [ocr_text]},
+        ),
+        # post_processing is part of chain in doc_type_router
+    )
+
+
+
+# This matches the last task above
+@JS.task("doc_type_router", queue="my_workflow_name", trail_ctx=True)
+def doc_type_router(
+    task,
+    classification_result: List[dict], # this is passed automatically into this task
+    ocr_text: List[str],
+):
+
+    task.ctx_holder.update(
+        CKey("workflow", "clf_results"),
+        classification_result,
+    )
+    # below are the standard kwargs for an extraction model
+    extraction_kwargs = {
+        # use your actual model id for record keeping, but doesn't matter
+        "model_id": 663,
+        "model": {
+            "id": 663,
+            # look up your actual model filepath in the DB
+            "model_file_path": "/finetune_models/ede8b152-e007-11eb-b469-e6b58bf8c967",
             "task_type": TaskType.ANNOTATION,
             "model_type": ModelType.FINETUNE,
             "model_options": {},
-            # set a user id for logging here
+            # user_id can be anything
             "user_id": 1,
         },
     }
-    # NOTE: if you wanted to run in parallel, wrap Task(), Task() in Group() -> List[List]
+
+    # You could then use some logic based on "classification_result" to alter the kwargs
+    # to select a different model (change model_file_path), etc.
+    if classification_result: # some actual logic
+        extraction_kwargs["model"]["model_file_path"] = ""
+    else:
+        extraction_kwargs["model"]["model_file_path"] = ""
     return Chain(
         Task(
-            # This needs to specify the actual IPA process that will be run
+            # This is always the same for extraction model
             "customv2",
             "predict",
             "predict",
-            args=([ocr_text],),
-            kwargs=predict_kwargs,
+            args=(ocr_text,),  # ocr_text List[str]
+            kwargs=extraction_kwargs,
         ),
-        # order is app, queue, path (reverse of JS.Task)
-        # below should match you app name in the __init__.py of this module
-        Task("custom_app", "workflow", "post_processing"),
+        # finally passing this to our final task
+        Task("funding_memos", "my_workflow_name", "post_processing"),
     )
 
 
-@JS.task("post_processing", queue="workflow", trail_ctx=True)
+@JS.task("post_processing", queue="my_workflow_name", trail_ctx=True)
 def post_processing(
-    task, chain_output, ctx_mappings: CKey("workflow", "ctx_mappings") = None
+    task,
+    extractions,
+    ctx_mappings: CKey("workflow", "ctx_mappings") = None,
+    cls_preds: CKey("workflow", "clf_results") = None,  # List[dict]
 ):
-    # Predictions is automatically populated by the chain.
-    # List[dict] predictions List[] == 2 if 2 grouped tasks
-    extractions = chain_output[
-        0
-    ]
+    # result from previous task (in this case extractions)
+    print(extractions[0])
     ctx_values = load_context_values(task, ctx_mappings=ctx_mappings)
-    tokens = task.storage.read_store_object(ctx_values["ocr_storage"])
-    input_filename = ctx_values["filename"]
-    # task.storage.store if larger than 100mb, not relevant here
+    # your OCR object
+    print(task.storage.read_store_object(ctx_values["ocr_storage"]))
+    # filename
+    print(ctx_values["filename"])
+    # INSERT WHATEVER CUSTOM LOGIC YOU WANT TO APPLY TO OUTPUT
+    myoutput_dict = {}
+    # create a name for your output file, should use this uuid4 for json output
     result_prefix = uuid4()
-    return task.storage.store(
-        dict, # this should be your result object 
-        meta=True, 
-        filename=f"{result_prefix}.json", 
+    # Create your final output json like below and return it
+    result_obj = task.storage.store(
+        myoutput_dict,
+        meta=True,
+        filename=f"{result_prefix}.json",
         serializer="json",
     )
+    return result_obj
