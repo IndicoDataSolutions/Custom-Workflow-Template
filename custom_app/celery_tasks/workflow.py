@@ -96,7 +96,7 @@ def start_extraction_pipeline(
         Task(
             # below should match you app name in the __init__.py of this module
             # order is app, queue, path (reverse of JS.Task)
-            "funding_memos",
+            "custom_app", #this should match __init__.py name and needs to match the name of the service in updraft
             "my_workflow_name",
             "doc_type_router",
             kwargs={"ocr_text": [ocr_text]},
@@ -113,7 +113,8 @@ def doc_type_router(
     classification_result: List[dict], # this is passed automatically into this task
     ocr_text: List[str],
 ):
-
+    # if you want to store something for later, store it like this (here key is 'clf_results')
+    # you will specify this as an arg later with CKey, see post_processing function
     task.ctx_holder.update(
         CKey("workflow", "clf_results"),
         classification_result,
@@ -157,8 +158,9 @@ def doc_type_router(
 @JS.task("post_processing", queue="my_workflow_name", trail_ctx=True)
 def post_processing(
     task,
-    extractions,
+    extractions, # if you use Group(Task, Task) this is a list of length # of models
     ctx_mappings: CKey("workflow", "ctx_mappings") = None,
+    # if you want to retrieve something you saved earlier, include it as an arg with the CKey specified
     cls_preds: CKey("workflow", "clf_results") = None,  # List[dict]
 ):
     # result from previous task (in this case extractions)
