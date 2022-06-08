@@ -64,13 +64,14 @@ services:
     # env is optional if you have multiple QUEUES on same cluster (i.e a QA/DEV)
     env: 
     - name: QUEUE_NAME
-      value: '1231231'
+      value: {queue-name}
     # name-of-image is whatever you called name-of-image in step 5
     image: {name-of-image}
-    # queue-name is whatever you call your queue in workflow.py
     queue: {queue-name}
     type: celery
     values:
+      nodeSelector:
+        node_group: static-workers
       resources:
         memory: 4Gi
 ```
@@ -79,7 +80,7 @@ Step 7: Save and then select "y" render with changes, but do NOT NOT NOT apply w
 Step 8: Run `indico render {service-name}` to creat a .yaml file for the service you created.
 
 Step 9: open the generated file in the generated/ folder and check the image name to make sure it looks 
-        like: `gcr.io/new-indico/metlife-funding-memos:main.a5499e0b92e9ec890c91fb90e0a7b5eff9888f05`
+        like: `gcr.io/new-indico/metlife-funding-memos:main.a5499e0b92e9ec890c91fb90e0a7b5eff9888f05`. 
 
 Step 9.1: Run `indico apply {service-name}`.
 
@@ -95,6 +96,34 @@ Step 13: Get the queue and task name from `JS.task` definition in your repositor
 
 Step 14: run custom workflow creation script (in elnino container ./scripts directory, to access:
          `kube exec elnino`) and follow the instructions. 
+Note: If your IPA is pre-4.14, you will need to add workflow settings: 
+
+```
+settings = {
+    "review_queue_enabled": False,
+    "review_queue_add_value_enabled": True,
+    "review_queue_rejection_reason_required": False,
+    "review_queue_reviewers_required": 1,
+    "exceptions_queue_enabled": False,
+    "exceptions_queue_add_value_enabled": True,
+    "exceptions_queue_rejection_reason_required": False,
+    "auto_review_queue_enabled": False,
+}
+workflow.settings = settings
+```
+
+You can add this anywhere after `workflow` is defined and before `db_session.commit()`
+
+Step 14.1: When running `custom_workflow.py` use the following args:
+
+```
+Dataset id: "ID of the dataset in step 11"
+User id: "User ID from step 12"
+Workflow name: "Name of workflow. Value does not matter"
+App: "Python lib name"
+Queue: "value of QUEUE_NAME"
+Task: "task name in step 13"
+```
 
 Step 15: write your workflow ID down!
 
@@ -108,7 +137,7 @@ have one custom service, if you have two (that use same image), you'll need to f
 
 Things not working?
 
-* From the cluster: `klogs start_of_your_worker_or_service_name`
+* From the cluster: `klogs service_name`. Ensure that cluster is receiving and running proper tasks. If no output is seen, the issue is most likely stemming from `custom_workflow.py`. Ensure that proper settings are pasted in if needed and the args are correct.
 * From the cluster: `klogs service_name\|customv2\|customv1\|doctor-workflow\|etc.` for all services used and then run a 
                      doc through workflow. 
 * From the cluster: `kubectl describe pod name-of-service`
